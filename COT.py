@@ -1,0 +1,315 @@
+import cot_reports as cot
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import streamlit as st
+from scipy.stats import percentileofscore
+
+# ----------------------------
+# Asset and participant mappings
+# ----------------------------
+
+MARKETS_FX = {
+    "EURO FX": ["EURO FX - CHICAGO MERCANTILE EXCHANGE"],
+    "JAPANESE YEN": ["JAPANESE YEN - CHICAGO MERCANTILE EXCHANGE"],
+    "BRITISH POUND STERLING": ["BRITISH POUND - CHICAGO MERCANTILE EXCHANGE"],
+    "SWISS FRANC": ["SWISS FRANC - CHICAGO MERCANTILE EXCHANGE"],
+    "CANADIAN DOLLAR": ["CANADIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE"],
+    "AUSTRALIAN DOLLAR": ["AUSTRALIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE"],
+    "MEXICAN PESO": ["MEXICAN PESO - CHICAGO MERCANTILE EXCHANGE"],
+    "NEW ZEALAND DOLLAR": ["NZ DOLLAR - CHICAGO MERCANTILE EXCHANGE"],
+    'SOUTH AFRICAN RAND': ['SO AFRICAN RAND - CHICAGO MERCANTILE EXCHANGE'],
+    "US DOLLAR INDEX": ["USD INDEX - ICE FUTURES U.S."]
+} 
+
+MARKETS_RATE = {
+    "SOFR-1M": ["SOFR-1M - CHICAGO MERCANTILE EXCHANGE"],
+    "SOFR-3M": ["SOFR-3M - CHICAGO MERCANTILE EXCHANGE"],
+    "EURO SHORT TERM RATE": ["EURO SHORT TERM RATE - CHICAGO MERCANTILE EXCHANGE"],
+    "ULTRA UST BOND": ["ULTRA UST BOND - CHICAGO BOARD OF TRADE"],
+    "UST BOND": ["UST BOND - CHICAGO BOARD OF TRADE"],
+    "UST 2Y NOTE": ["UST 2Y NOTE - CHICAGO BOARD OF TRADE"],
+    "UST 5Y NOTE": ["UST 5Y NOTE - CHICAGO BOARD OF TRADE"],
+    "UST 10Y NOTE": ["UST 10Y NOTE - CHICAGO BOARD OF TRADE"],
+    "ULTRA UST 10Y": ["ULTRA UST 10Y - CHICAGO BOARD OF TRADE"],
+    "MICRO 10 YEAR YIELD": ["MICRO 10 YEAR YIELD - CHICAGO BOARD OF TRADE"],
+    "FED FUNDS": ["FED FUNDS - CHICAGO BOARD OF TRADE"]
+} 
+
+MARKETS_CRYPTO = {
+    'BTC': ['BITCOIN - CHICAGO MERCANTILE EXCHANGE'],
+    'MICRO BTC': ['MICRO BITCOIN - CHICAGO MERCANTILE EXCHANGE '],
+    'ETH': ['ETHER CASH SETTLED - CHICAGO MERCANTILE EXCHANGE'],
+    'XRP': ['XRP - CHICAGO MERCANTILE EXCHANGE '],
+    'SOL': ['SOL - CHICAGO MERCANTILE EXCHANGE'],
+    'DOGECOIN': ['DOGECOIN - COINBASE DERIVATIVES, LLC'],
+    'CHAINLINK': ['CHAINLINK - COINBASE DERIVATIVES, LLC '],
+    'AVAX': ['AVALANCHE - COINBASE DERIVATIVES, LLC']
+}  
+
+MARKETS_INDICES = {
+    'VIX FUTURES': ['VIX FUTURES - CBOE FUTURES EXCHANGE'],
+    'S&P 500 Consolidated': ['S&P 500 Consolidated - CHICAGO MERCANTILE EXCHANGE'],
+    'MICRO E-MINI S&P 500 INDEX': ['MICRO E-MINI S&P 500 INDEX - CHICAGO MERCANTILE EXCHANGE'],
+    'NASDAQ MINI': ['NASDAQ MINI - CHICAGO MERCANTILE EXCHANGE'],
+    'E-MINI S&P 500': ['E-MINI S&P 500 - CHICAGO MERCANTILE EXCHANGE'],
+    'MSCI EAFE': ['MSCI EAFE  - ICE FUTURES U.S.'],
+    'MSCI EM INDEX': ['MSCI EM INDEX - ICE FUTURES U.S.'],
+    'NIKKEI STOCK AVERAGE YEN DENOM': ['NIKKEI STOCK AVERAGE YEN DENOM - CHICAGO MERCANTILE EXCHANGE'],
+    'BBG COMMODITY INDEX': ['BBG COMMODITY - CHICAGO BOARD OF TRADE']
+}  
+
+MARKETS_COMMODITIES = {
+    "GOLD": ["GOLD - COMMODITY EXCHANGE INC."],
+    "SILVER": ["SILVER - COMMODITY EXCHANGE INC."],
+    "PLATINUM": ["PLATINUM - NEW YORK MERCANTILE EXCHANGE"],
+    "COPPER": ["COPPER- #1 - COMMODITY EXCHANGE INC."],
+    "COBALT": ["COBALT - COMMODITY EXCHANGE INC."],
+    "COCOA": ["COCOA - ICE FUTURES U.S."],
+    "WHEAT-SRW": ["WHEAT-SRW - CHICAGO BOARD OF TRADE"],
+    "WHEAT-HRW": ["WHEAT-HRW - CHICAGO BOARD OF TRADE"],
+    "SOYBEANS": ["SOYBEANS - CHICAGO BOARD OF TRADE"],
+    "SOYBEAN OIL": ["SOYBEAN OIL - CHICAGO BOARD OF TRADE"],
+    "SOYBEAN MEAL": ["SOYBEAN MEAL - CHICAGO BOARD OF TRADE"],
+    "CANOLA": ["CANOLA - ICE FUTURES U.S."]
+}  
+
+PARTICIPANTS_FIN = {
+    "Dealers": ("Dealer_Positions_Long_All", "Dealer_Positions_Short_All"),
+    "AM/FI": ("Asset_Mgr_Positions_Long_All", "Asset_Mgr_Positions_Short_All"),
+    "Lev Funds": ("Lev_Money_Positions_Long_All", "Lev_Money_Positions_Short_All"),
+    "Non-Rept": ("NonRept_Positions_Long_All", "NonRept_Positions_Short_All")
+}
+
+PARTICIPANTS_COM = {
+    "Producers/Merchants": ("Prod_Merc_Positions_Long_All", "Prod_Merc_Positions_Short_All"),
+    "Managed Money": ("M_Money_Positions_Long_All", "M_Money_Positions_Short_All"),
+    "Other Rept": ("Other_Rept_Positions_Long_All", "Other_Rept_Positions_Short_All"),
+    "Non-Rept": ("NonRept_Positions_Long_All", "NonRept_Positions_Short_All")
+}
+
+# ----------------------------
+# Fetch data
+# ----------------------------
+@st.cache_data
+def fetch_cot_data():
+    fin_df = cot.cot_all(cot_report_type="traders_in_financial_futures_futopt")
+    com_df = cot.cot_all(cot_report_type="disaggregated_futopt")
+
+    fin_assets = {**MARKETS_FX, **MARKETS_RATE, **MARKETS_CRYPTO, **MARKETS_INDICES}
+    asset_dfs_fin = {}
+    asset_dfs_com = {}
+
+    # Financial assets
+    for asset, exact_names in fin_assets.items():
+        matches = fin_df[fin_df["Market_and_Exchange_Names"].isin(exact_names)]
+        if not matches.empty:
+            asset_dfs_fin[asset] = matches.copy()
+
+    # Commodity assets
+    for asset, exact_names in MARKETS_COMMODITIES.items():
+        matches = com_df[com_df["Market_and_Exchange_Names"].isin(exact_names)]
+        if not matches.empty:
+            asset_dfs_com[asset] = matches.copy()
+
+    return asset_dfs_fin, asset_dfs_com
+
+# ----------------------------
+# Compute percentiles
+# ----------------------------
+def compute_latest_percentiles(asset_dfs, months_list=[12, 18], cot_type="financial"):
+    summary_list = []
+    participants_map = PARTICIPANTS_FIN if cot_type == "financial" else PARTICIPANTS_COM
+
+    for asset, df in asset_dfs.items():
+        df = df.copy()
+        df["Date"] = pd.to_datetime(df["Report_Date_as_YYYY-MM-DD"], errors="coerce")
+        df = df.dropna(subset=["Date"]).sort_values("Date")
+        latest_row = df.iloc[-1]
+
+        total_long = sum(latest_row[cols[0]] for cols in participants_map.values())
+        total_short = sum(latest_row[cols[1]] for cols in participants_map.values())
+        total_net = total_long - total_short
+
+        asset_summary = {
+            "asset": asset,
+            "total_long": int(total_long),
+            "total_short": int(total_short),
+            "total_net": int(total_net)
+        }
+
+        for months in months_list:
+            cutoff = pd.Timestamp.today() - pd.DateOffset(months=months)
+            df_hist = df[df["Date"] >= cutoff]
+
+            for p_name, (long_col, short_col) in participants_map.items():
+                long_val = latest_row.get(long_col, 0)
+                short_val = latest_row.get(short_col, 0)
+                net_val = long_val - short_val
+
+                long_pct = percentileofscore(df_hist[long_col].dropna(), long_val)
+                short_pct = percentileofscore(df_hist[short_col].dropna(), short_val)
+                net_pct = percentileofscore((df_hist[long_col]-df_hist[short_col]).dropna(), net_val)
+
+                asset_summary[f"{p_name} Long Percentile {months}m"] = round(long_pct, 2)
+                asset_summary[f"{p_name} Short Percentile {months}m"] = round(short_pct, 2)
+                asset_summary[f"{p_name} Net Percentile {months}m"] = round(net_pct, 2)
+
+        summary_list.append(asset_summary)
+    return pd.DataFrame(summary_list)
+
+# ----------------------------
+# Plot 4 stacked charts
+# ----------------------------
+def plot_4rows(asset, asset_dfs, cot_type="financial", months_back=18):
+    df = asset_dfs[asset].copy()
+    df["Date"] = pd.to_datetime(df["Report_Date_as_YYYY-MM-DD"], errors="coerce")
+    df = df.dropna(subset=["Date"]).sort_values("Date")
+
+    cutoff = pd.Timestamp.today() - pd.DateOffset(months=months_back)
+    df = df[df["Date"] >= cutoff]
+
+    participants_map = PARTICIPANTS_FIN if cot_type == "financial" else PARTICIPANTS_COM
+
+    fig = make_subplots(rows=4, cols=1, subplot_titles=[p for p in participants_map.keys()])
+
+    row = 1
+    for p_name, (long_col, short_col) in participants_map.items():
+        # Longs
+        fig.add_trace(go.Bar(
+            x=df["Date"], y=df[long_col],
+            name=f"{p_name} Long", marker_color="green"
+        ), row=row, col=1)
+
+        # Shorts
+        fig.add_trace(go.Bar(
+            x=df["Date"], y=-df[short_col],
+            name=f"{p_name} Short", marker_color="red"
+        ), row=row, col=1)
+
+        # Net
+        net_val = df[long_col] - df[short_col]
+        fig.add_trace(go.Scatter(
+            x=df["Date"], y=net_val,
+            mode="lines+markers",
+            name=f"{p_name} Net", line=dict(color="purple")
+        ), row=row, col=1)
+
+        row += 1
+
+    fig.update_layout(
+        height=1200, width=1200,
+        title=dict(text=f"{asset} Positions (Last {months_back} Months)", x=0.5, xanchor="center"),
+        barmode="relative"
+    )
+    return fig
+
+# ----------------------------
+# Streamlit App
+# ----------------------------
+st.title("COT Reports Dashboard")
+
+asset_dfs_fin, asset_dfs_com = fetch_cot_data()
+percentiles_fin = compute_latest_percentiles(asset_dfs_fin, cot_type="financial")
+percentiles_com = compute_latest_percentiles(asset_dfs_com, cot_type="commodity")
+
+pages = {
+    "FX Futures": MARKETS_FX,
+    "Rate Futures": MARKETS_RATE,
+    "Crypto Futures": MARKETS_CRYPTO,
+    "Equity Index Futures": MARKETS_INDICES,
+    "Commodity Futures": MARKETS_COMMODITIES
+}
+
+page = st.sidebar.selectbox("Select Market Page", list(pages.keys()))
+assets = list(pages[page].keys())
+selected_asset = st.sidebar.selectbox(f"Select Asset ({page})", assets)
+
+# Choose which asset_dfs and percentiles_df to use
+if page == "Commodity Futures":
+    df_dict = asset_dfs_com
+    pct_df = percentiles_com
+    cot_type = "commodity"
+else:
+    df_dict = asset_dfs_fin
+    pct_df = percentiles_fin
+    cot_type = "financial"
+
+# Get latest available date for this asset
+latest_date = None
+if selected_asset in df_dict:
+    df_temp = df_dict[selected_asset].copy()
+    df_temp["Date"] = pd.to_datetime(df_temp["Report_Date_as_YYYY-MM-DD"], errors="coerce")
+    df_temp = df_temp.dropna(subset=["Date"])
+    if not df_temp.empty:
+        latest_date = df_temp["Date"].max().strftime("%Y-%m-%d")
+
+# ----------------------------
+# Show Charts
+# ----------------------------
+st.subheader(f"{selected_asset} Charts" + (f" (Latest data: {latest_date})" if latest_date else ""))
+st.plotly_chart(plot_4rows(selected_asset, df_dict, cot_type=cot_type, months_back=18))
+
+# ----------------------------
+# Show Percentiles
+# ----------------------------
+st.subheader(f"{selected_asset} Percentiles" + (f" (Latest data: {latest_date})" if latest_date else ""))
+participants_map = PARTICIPANTS_FIN if cot_type == "financial" else PARTICIPANTS_COM
+
+def color_percentiles(val):
+    """Red (0%) → Green (100%)"""
+    if pd.isna(val):
+        return ''
+    red = int(255 * (100 - val) / 100)
+    green = int(255 * val / 100)
+    return f'background-color: rgb({red},{green},0)'
+
+for p_name, _ in participants_map.items():
+    st.markdown(f"**{p_name}**")
+    # Get all participant columns, exclude 'asset'
+    cols = [col for col in pct_df.columns if col.startswith(p_name)]
+    df_show = pct_df[pct_df["asset"] == selected_asset][cols].copy()
+    
+    # Apply color styling
+    styled_df = df_show.style.applymap(color_percentiles)
+    
+    # Render without index
+    st.markdown(styled_df.hide(axis="index").to_html(), unsafe_allow_html=True)
+
+# ----------------------------
+# Show Open Interest Section
+# ----------------------------
+if latest_date:
+    st.subheader(f"{selected_asset} Open Interest (Latest data available: {latest_date})")
+else:
+    st.subheader(f"{selected_asset} Open Interest")
+
+if selected_asset in df_dict:
+    df_temp = df_dict[selected_asset].copy()
+    df_temp["Date"] = pd.to_datetime(df_temp["Report_Date_as_YYYY-MM-DD"], errors="coerce")
+    df_temp = df_temp.dropna(subset=["Date"]).sort_values("Date")
+
+    if not df_temp.empty:
+        latest_row = df_temp.iloc[-1]
+
+        # Map participants
+        participants_map = PARTICIPANTS_FIN if cot_type == "financial" else PARTICIPANTS_COM
+
+        for p_name, (long_col, short_col) in participants_map.items():
+            st.markdown(f"**{p_name}**")
+
+            # Construct dictionary for OI + Pct of OI
+            oi_data = {
+                "Long OI": latest_row.get(long_col, 0),
+                "Short OI": latest_row.get(short_col, 0),
+                "Net OI": latest_row.get(long_col, 0) - latest_row.get(short_col, 0),
+                "% Long OI": latest_row.get(f"Pct_of_OI_{long_col.replace('_Positions_', '_')}", 0),
+                "% Short OI": latest_row.get(f"Pct_of_OI_{short_col.replace('_Positions_', '_')}", 0),
+                "% Net OI": (latest_row.get(f"Pct_of_OI_{long_col.replace('_Positions_', '_')}", 0)
+                             - latest_row.get(f"Pct_of_OI_{short_col.replace('_Positions_', '_')}", 0))
+            }
+
+            st.dataframe(pd.DataFrame([oi_data]), use_container_width=True, hide_index=True)
+
+    else:
+        st.info("No open interest data available for this asset.")
