@@ -226,6 +226,58 @@ def plot_4rows(asset, asset_dfs, cot_type="financial", months_back=18):
     )
     return fig
 
+
+# ----------------------------
+# Plot Open Interest charts
+# ----------------------------
+def plot_oi_4rows(asset, asset_dfs, cot_type="financial", months_back=18):
+    df = asset_dfs[asset].copy()
+    df["Date"] = pd.to_datetime(df["Report_Date_as_YYYY-MM-DD"], errors="coerce")
+    df = df.dropna(subset=["Date"]).sort_values("Date")
+
+    cutoff = pd.Timestamp.today() - pd.DateOffset(months=months_back)
+    df = df[df["Date"] >= cutoff]
+
+    participants_map = PARTICIPANTS_FIN if cot_type == "financial" else PARTICIPANTS_COM
+
+    fig = make_subplots(rows=4, cols=1, subplot_titles=[p for p in participants_map.keys()])
+
+    row = 1
+    for p_name, (long_col, short_col) in participants_map.items():
+        # Open Interest (Long as is, Short flipped negative)
+        oi_long = df[long_col]
+        oi_short = -df[short_col]  # <-- flip the short OI
+
+        # Long OI
+        fig.add_trace(go.Bar(
+            x=df["Date"], y=oi_long,
+            name=f"{p_name} Long OI", marker_color="green"
+        ), row=row, col=1)
+
+        # Short OI (negative)
+        fig.add_trace(go.Bar(
+            x=df["Date"], y=oi_short,
+            name=f"{p_name} Short OI", marker_color="red"
+        ), row=row, col=1)
+
+        # Net OI
+        net_oi = df[long_col] - df[short_col]
+        fig.add_trace(go.Scatter(
+            x=df["Date"], y=net_oi,
+            mode="lines+markers",
+            name=f"{p_name} Net OI", line=dict(color="purple")
+        ), row=row, col=1)
+
+        row += 1
+
+    fig.update_layout(
+        height=1200, width=1200,
+        title=dict(text=f"{asset} Open Interest (Last {months_back} Months)", x=0.5, xanchor="center"),
+        barmode="relative"
+    )
+    return fig
+
+
 # ----------------------------
 # Streamlit App
 # ----------------------------
@@ -271,6 +323,13 @@ if selected_asset in df_dict:
 # ----------------------------
 st.subheader(f"{selected_asset} Charts" + (f" (Latest data: {latest_date})" if latest_date else ""))
 st.plotly_chart(plot_4rows(selected_asset, df_dict, cot_type=cot_type, months_back=18))
+
+# ----------------------------
+# Show Open Interest Charts
+# ----------------------------
+st.subheader(f"{selected_asset} Open Interest Charts" + (f" (Latest data: {latest_date})" if latest_date else ""))
+st.plotly_chart(plot_oi_4rows(selected_asset, df_dict, cot_type=cot_type, months_back=18))
+
 
 # ----------------------------
 # Show Percentiles
