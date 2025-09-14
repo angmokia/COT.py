@@ -110,6 +110,21 @@ PARTICIPANTS_COM = {
     "Non-Rept": ("NonRept_Positions_Long_All", "NonRept_Positions_Short_All")
 }
 
+PARTICIPANTS_FIN_OI = {
+    "Dealers": ("Pct_of_OI_Dealer_Long_All", "Pct_of_OI_Dealer_Short_All"),
+    "AM/FI": ("Pct_of_OI_Asset_Mgr_Long_All", "Pct_of_OI_Asset_Mgr_Short_All"),
+    "Lev Funds": ("Pct_of_OI_Lev_Money_Long_All", "Pct_of_OI_Lev_Money_Short_All"),
+    "Non-Rept": ("Pct_of_OI_NonRept_Long_All", "Pct_of_OI_NonRept_Short_All")
+}
+
+PARTICIPANTS_COM_OI = {
+    "Prod/Merc": ("Pct_of_OI_Prod_Merc_Long_All", "Pct_of_OI_Prod_Merc_Short_All"),
+    "Managed Money": ("Pct_of_OI_M_Money_Long_All", "Pct_of_OI_M_Money_Short_All"),
+    "Other Rept": ("Pct_of_OI_Other_Rept_Long_All", "Pct_of_OI_Other_Rept_Short_All"),
+    "Non-Rept": ("Pct_of_OI_NonRept_Long_All", "Pct_of_OI_NonRept_Short_All")
+}
+
+
 # ----------------------------
 # Fetch data
 # ----------------------------
@@ -238,29 +253,32 @@ def plot_oi_4rows(asset, asset_dfs, cot_type="financial", months_back=18):
     cutoff = pd.Timestamp.today() - pd.DateOffset(months=months_back)
     df = df[df["Date"] >= cutoff]
 
-    participants_map = PARTICIPANTS_FIN if cot_type == "financial" else PARTICIPANTS_COM
+    # Use correct participant mappings for OI
+    participants_map = PARTICIPANTS_FIN_OI if cot_type == "financial" else PARTICIPANTS_COM_OI
 
     fig = make_subplots(rows=4, cols=1, subplot_titles=[p for p in participants_map.keys()])
 
     row = 1
     for p_name, (long_col, short_col) in participants_map.items():
-        # Open Interest (Long as is, Short flipped negative)
+        # Long OI as positive
         oi_long = df[long_col]
-        oi_short = -df[short_col]  # <-- flip the short OI
 
-        # Long OI
+        # Short OI as negative
+        oi_short = -df[short_col]
+
+        # Plot Long OI
         fig.add_trace(go.Bar(
             x=df["Date"], y=oi_long,
             name=f"{p_name} Long OI", marker_color="green"
         ), row=row, col=1)
 
-        # Short OI (negative)
+        # Plot Short OI
         fig.add_trace(go.Bar(
             x=df["Date"], y=oi_short,
             name=f"{p_name} Short OI", marker_color="red"
         ), row=row, col=1)
 
-        # Net OI
+        # Net OI as a line
         net_oi = df[long_col] - df[short_col]
         fig.add_trace(go.Scatter(
             x=df["Date"], y=net_oi,
@@ -281,7 +299,7 @@ def plot_oi_4rows(asset, asset_dfs, cot_type="financial", months_back=18):
 # ----------------------------
 # Streamlit App
 # ----------------------------
-st.title("COT Reports Dashboard")
+st.title("COT Market Participants Positioning")
 
 asset_dfs_fin, asset_dfs_com = fetch_cot_data()
 percentiles_fin = compute_latest_percentiles(asset_dfs_fin, cot_type="financial")
@@ -321,20 +339,20 @@ if selected_asset in df_dict:
 # ----------------------------
 # Show Charts
 # ----------------------------
-st.subheader(f"{selected_asset} Charts" + (f" (Latest data: {latest_date})" if latest_date else ""))
+st.subheader(f"{selected_asset} Positioning" + (f" (Latest: {latest_date})" if latest_date else ""))
 st.plotly_chart(plot_4rows(selected_asset, df_dict, cot_type=cot_type, months_back=18))
 
 # ----------------------------
 # Show Open Interest Charts
 # ----------------------------
-st.subheader(f"{selected_asset} Open Interest Charts" + (f" (Latest data: {latest_date})" if latest_date else ""))
+st.subheader(f"{selected_asset} OI Percentages" + (f" (Latest: {latest_date})" if latest_date else ""))
 st.plotly_chart(plot_oi_4rows(selected_asset, df_dict, cot_type=cot_type, months_back=18))
 
 
 # ----------------------------
 # Show Percentiles
 # ----------------------------
-st.subheader(f"{selected_asset} Percentiles" + (f" (Latest data: {latest_date})" if latest_date else ""))
+st.subheader(f"{selected_asset} Positioning Percentiles" + (f" (Latest: {latest_date})" if latest_date else ""))
 participants_map = PARTICIPANTS_FIN if cot_type == "financial" else PARTICIPANTS_COM
 
 def color_percentiles(val):
@@ -361,9 +379,9 @@ for p_name, _ in participants_map.items():
 # Show Open Interest Section
 # ----------------------------
 if latest_date:
-    st.subheader(f"{selected_asset} Open Interest (Latest data available: {latest_date})")
+    st.subheader(f"{selected_asset} OI (Latest: {latest_date})")
 else:
-    st.subheader(f"{selected_asset} Open Interest")
+    st.subheader(f"{selected_asset} OI")
 
 if selected_asset in df_dict:
     df_temp = df_dict[selected_asset].copy()
