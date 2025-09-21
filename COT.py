@@ -128,7 +128,7 @@ PARTICIPANTS_COM_OI = {
 # ----------------------------
 # Fetch data
 # ----------------------------
-@st.cache_data
+@st.cache_data(ttl=86400)
 def fetch_cot_data():
     fin_df = cot.cot_all(cot_report_type="traders_in_financial_futures_futopt")
     com_df = cot.cot_all(cot_report_type="disaggregated_futopt")
