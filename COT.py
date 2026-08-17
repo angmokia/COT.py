@@ -370,7 +370,7 @@ for p_name, _ in participants_map.items():
     df_show = pct_df[pct_df["asset"] == selected_asset][cols].copy()
     
     # Apply color styling
-    styled_df = df_show.style.applymap(color_percentiles).format("{:.2f}")
+    styled_df = df_show.style.map(color_percentiles).format("{:.2f}")
     
     # Render without index
     st.markdown(styled_df.hide(axis="index").to_html(), unsafe_allow_html=True)
