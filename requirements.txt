@@ -1,5 +1,5 @@
-streamlit
-pandas
-plotly
-scipy
+streamlit>=1.38
+pandas>=2.1
+plotly>=5.24
+scipy>=1.13
 cot_reports
